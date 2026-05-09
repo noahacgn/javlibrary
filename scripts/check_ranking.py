@@ -24,6 +24,12 @@ STATE_PATH = Path("data/latest.json")
 EXPECTED_RANKING_SIZE = 20
 SMTP_HOST = "smtp.qq.com"
 SMTP_PORT = 465
+SCRAPERAPI_PROFILES = (
+    ("render+wait_for_starbox", {"render": "true", "wait_for_selector": ".starbox"}),
+    ("render", {"render": "true"}),
+    ("render+premium", {"render": "true", "premium": "true"}),
+    ("render+ultra_premium", {"render": "true", "ultra_premium": "true"}),
+)
 
 
 class RankingError(Exception):
@@ -39,14 +45,25 @@ class EvaluationResult:
     current_ranking: list[dict[str, Any]]
 
 
-def fetch_ranking_html(api_key: str, timeout: int = 120) -> str:
-    params = urllib.parse.urlencode(
-        {
-            "api_key": api_key,
-            "url": TARGET_URL,
-            "render": "true",
-        }
-    )
+def fetch_current_ranking(api_key: str, timeout: int = 120, fetcher: Any | None = None) -> list[dict[str, Any]]:
+    fetcher = fetcher or fetch_ranking_html
+    errors: list[str] = []
+    for profile_name, scraperapi_params in SCRAPERAPI_PROFILES:
+        try:
+            html = fetcher(api_key, scraperapi_params, timeout)
+            return parse_ranking(html)
+        except RankingError as exc:
+            errors.append(f"{profile_name}: {exc}")
+    raise RankingError("所有 ScraperAPI 参数组合均失败:\n- " + "\n- ".join(errors))
+
+
+def fetch_ranking_html(api_key: str, scraperapi_params: dict[str, str] | None = None, timeout: int = 120) -> str:
+    request_params = {
+        "api_key": api_key,
+        "url": TARGET_URL,
+    }
+    request_params.update(scraperapi_params or SCRAPERAPI_PROFILES[0][1])
+    params = urllib.parse.urlencode(request_params)
     request_url = f"{SCRAPERAPI_URL}?{params}"
     request = urllib.request.Request(
         request_url,
@@ -264,8 +281,7 @@ def run(state_path: Path = STATE_PATH, send_notification: bool = True) -> Evalua
     email = require_env("QQ_EMAIL")
     auth_code = require_env("QQ_SMTP_AUTH_CODE")
 
-    html = fetch_ranking_html(api_key)
-    current_ranking = parse_ranking(html)
+    current_ranking = fetch_current_ranking(api_key)
     result = evaluate_ranking(current_ranking, state_path)
 
     if result.should_send_email and send_notification:

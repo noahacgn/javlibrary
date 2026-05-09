@@ -64,6 +64,38 @@ class ParseRankingTests(unittest.TestCase):
             check_ranking.parse_ranking(html_for(["aa001", "aa002"]))
 
 
+class FetchFallbackTests(unittest.TestCase):
+    def test_fetch_current_ranking_falls_back_after_request_error(self):
+        calls = []
+
+        def fetcher(api_key, scraperapi_params, timeout):
+            calls.append(scraperapi_params)
+            if len(calls) == 1:
+                raise check_ranking.RankingError("HTTP 500")
+            return html_for()
+
+        items = check_ranking.fetch_current_ranking("key", fetcher=fetcher)
+
+        self.assertEqual(20, len(items))
+        self.assertEqual({"render": "true", "wait_for_selector": ".starbox"}, calls[0])
+        self.assertEqual({"render": "true"}, calls[1])
+
+    def test_fetch_current_ranking_falls_back_after_parse_error(self):
+        calls = []
+
+        def fetcher(api_key, scraperapi_params, timeout):
+            calls.append(scraperapi_params)
+            if len(calls) == 1:
+                return "<html></html>"
+            return html_for()
+
+        items = check_ranking.fetch_current_ranking("key", fetcher=fetcher)
+
+        self.assertEqual(20, len(items))
+        self.assertEqual({"render": "true", "wait_for_selector": ".starbox"}, calls[0])
+        self.assertEqual({"render": "true"}, calls[1])
+
+
 class RankingChangeTests(unittest.TestCase):
     def test_missing_previous_state_initializes_without_email(self):
         with tempfile.TemporaryDirectory() as temp_dir:

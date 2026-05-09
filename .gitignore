@@ -1,0 +1,13 @@
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+最受欢迎演员 - JAVLibrary.html
+最受欢迎演员 - JAVLibrary_files/

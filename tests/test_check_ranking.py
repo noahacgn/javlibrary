@@ -95,6 +95,29 @@ class FetchFallbackTests(unittest.TestCase):
         self.assertEqual({"render": "true", "wait_for_selector": ".starbox"}, calls[0])
         self.assertEqual({"render": "true"}, calls[1])
 
+    def test_fetch_current_ranking_retries_all_profiles_after_transient_failures(self):
+        calls = []
+        sleeps = []
+        success_call = len(check_ranking.SCRAPERAPI_PROFILES) + 1
+
+        def fetcher(api_key, scraperapi_params, timeout):
+            calls.append(scraperapi_params)
+            if len(calls) < success_call:
+                raise check_ranking.RankingError("HTTP 500")
+            return html_for()
+
+        items = check_ranking.fetch_current_ranking(
+            "key",
+            fetcher=fetcher,
+            attempts=2,
+            retry_delays=(7,),
+            sleeper=sleeps.append,
+        )
+
+        self.assertEqual(20, len(items))
+        self.assertEqual(7, sleeps[0])
+        self.assertEqual(success_call, len(calls))
+
 
 class RankingChangeTests(unittest.TestCase):
     def test_missing_previous_state_initializes_without_email(self):

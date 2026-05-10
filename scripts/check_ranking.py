@@ -6,6 +6,7 @@ import os
 import re
 import smtplib
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -24,6 +25,8 @@ STATE_PATH = Path("data/latest.json")
 EXPECTED_RANKING_SIZE = 20
 SMTP_HOST = "smtp.qq.com"
 SMTP_PORT = 465
+FETCH_ATTEMPTS = 3
+FETCH_RETRY_DELAYS_SECONDS = (60, 180)
 SCRAPERAPI_PROFILES = (
     ("render+wait_for_starbox", {"render": "true", "wait_for_selector": ".starbox"}),
     ("render", {"render": "true"}),
@@ -45,15 +48,26 @@ class EvaluationResult:
     current_ranking: list[dict[str, Any]]
 
 
-def fetch_current_ranking(api_key: str, timeout: int = 120, fetcher: Any | None = None) -> list[dict[str, Any]]:
+def fetch_current_ranking(
+    api_key: str,
+    timeout: int = 120,
+    fetcher: Any | None = None,
+    attempts: int = FETCH_ATTEMPTS,
+    retry_delays: tuple[int, ...] = FETCH_RETRY_DELAYS_SECONDS,
+    sleeper: Any = time.sleep,
+) -> list[dict[str, Any]]:
     fetcher = fetcher or fetch_ranking_html
     errors: list[str] = []
-    for profile_name, scraperapi_params in SCRAPERAPI_PROFILES:
-        try:
-            html = fetcher(api_key, scraperapi_params, timeout)
-            return parse_ranking(html)
-        except RankingError as exc:
-            errors.append(f"{profile_name}: {exc}")
+    for attempt in range(1, attempts + 1):
+        for profile_name, scraperapi_params in SCRAPERAPI_PROFILES:
+            try:
+                html = fetcher(api_key, scraperapi_params, timeout)
+                return parse_ranking(html)
+            except RankingError as exc:
+                errors.append(f"第 {attempt} 次 {profile_name}: {exc}")
+        if attempt < attempts:
+            delay_index = min(attempt - 1, len(retry_delays) - 1)
+            sleeper(retry_delays[delay_index])
     raise RankingError("所有 ScraperAPI 参数组合均失败:\n- " + "\n- ".join(errors))
 
 
